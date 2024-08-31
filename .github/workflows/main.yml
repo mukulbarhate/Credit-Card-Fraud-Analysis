@@ -1,43 +1,73 @@
-name: Kaggle to AWS Workflow
+name: Credit Card Fraud Detection Pipeline
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  kaggle-to-s3:
+  setup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.9'
 
       - name: Install dependencies
         run: |
-          pip install kaggle boto3 pandas pymysql
+          python -m pip install --upgrade pip
+          pip install boto3 pandas pyathena
 
-      - name: Download Kaggle Dataset
-        env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+  s3_rds_integration:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Data Transformation and Merging on EMR
         run: |
-          kaggle datasets download -d demo12 -p ./data
-          unzip ./data/demo12.zip -d ./data
+          python scripts/emr.py  # Running your EMR script
 
-      - name: Upload to S3
+      - name: Upload Processed Data to S3
+        run: |
+          aws s3 cp processed_data/ s3://desti-bucket-proj.com/path/ --recursive
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'us-east-1'
+
+      - name: Load Data from S3 to RDS
         run: |
-          python -c "
-          import boto3
-          s3 = boto3.client('s3')
-          with open('./data/<dataset-file>', 'rb') as f:
-              s3.upload_fileobj(f, '<s3-bucket-name>', '<dataset-file>')
-          "
+          python scripts/load_to_rds.py  # Replace with your actual script
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'us-east-1'
+
+  glue_crawler:
+    needs: s3_rds_integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger AWS Glue Crawler
+        run: |
+          aws glue start-crawler --name your-glue-crawler-name
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'us-east-1'
+
+  athena_query:
+    needs: glue_crawler
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Athena Query
+        run: |
+          python scripts/run_athena_query.py  # Replace with your actual script
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'us-east-1'
 
