@@ -1,18 +1,9 @@
-import sys
-from pyspark.context import SparkContext
-from awsglue.context import GlueContext
-from awsglue.job import Job
-from awsglue.utils import getResolvedOptions
+from pyspark.sql import SparkSession
 
-# Define the job parameters
-args = getResolvedOptions(sys.argv, ['JOB_NAME'])
-
-# Initialize Spark and Glue context
-sc = SparkContext()
-glueContext = GlueContext(sc)
-spark = glueContext.spark_session
-job = Job(glueContext)
-job.init(args['JOB_NAME'], args)
+# Initialize Spark session
+spark = SparkSession.builder \
+    .appName("EMR Job") \
+    .getOrCreate()
 
 # JDBC properties
 jdbc_url = "jdbc:mysql://database-1.cow8emhoqtau.us-east-1.rds.amazonaws.com:3306/datadb"
@@ -48,12 +39,15 @@ s3_df = spark.read.csv(s3_input, header=True, inferSchema=True)
 # Union DataFrames
 df_union = df_ten.union(df_ten_one).union(s3_df)
 
+# Drop rows with any null values
+df_dropped_na = df_union.dropna()
+
 # Remove duplicates
-df_uniq_all = df_union.dropDuplicates()
+df_uniq_all = df_dropped_na.dropDuplicates()
 
 # Write the resulting DataFrame to S3 in CSV format
 output_path = "s3://credit-card-twenty/credit_card_csv/credit_card.csv"
 df_uniq_all.write.mode("overwrite").csv(output_path)
 
-# Commit the job
-job.commit()
+# Stop the Spark session
+spark.stop()
