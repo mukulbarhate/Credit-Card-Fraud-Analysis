@@ -1,53 +1,66 @@
 from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, DecimalType
 
-# Initialize Spark session
+# Initialize Spark Session
 spark = SparkSession.builder \
-    .appName("EMR Job") \
+    .appName("SplitDataFrame") \
     .getOrCreate()
 
-# JDBC properties
-jdbc_url = "jdbc:mysql://database-1.cow8emhoqtau.us-east-1.rds.amazonaws.com:3306/datadb"
-mysql_properties = {
+# Define Schema
+schema = StructType([
+    StructField("_c0", StringType(), True),
+    StructField("ssn", StringType(), True),
+    StructField("cc_num", StringType(), True),
+    StructField("first", StringType(), True),
+    StructField("last", StringType(), True),
+    StructField("gender", StringType(), True),
+    StructField("street", StringType(), True),
+    StructField("city", StringType(), True),
+    StructField("state", StringType(), True),
+    StructField("zip", DecimalType(5, 0), True),
+    StructField("lat", DecimalType(9, 6), True),
+    StructField("long", DecimalType(9, 6), True),
+    StructField("city_pop", StringType(), True),
+    StructField("job", StringType(), True),
+    StructField("dob", StringType(), True),
+    StructField("acct_num", StringType(), True),
+    StructField("profile", StringType(), True),
+    StructField("trans_num", StringType(), True),
+    StructField("trans_date", StringType(), True),
+    StructField("trans_time", StringType(), True),
+    StructField("unix_time", StringType(), True),
+    StructField("category", StringType(), True),
+    StructField("amt", DecimalType(9, 2), True),
+    StructField("is_fraud", DecimalType(9, 0), True),
+    StructField("merchant", StringType(), True),
+    StructField("merch_lat", DecimalType(9, 6), True),
+    StructField("merch_long", DecimalType(9, 6), True)
+])
+
+# Read data from S3
+s3_path = "s3://group8project/credit_card_fraud/"
+df = spark.read.csv(s3_path, schema=schema, header=True)
+
+# Split DataFrame
+df_rds = df.limit(100000)  # First 100,000 rows for RDS
+df_s3 = df.subtract(df_rds)  # Remaining 33,900,000 rows for S3
+
+# Coalesce df_s3 to reduce the number of partitions
+df_s3_coalesced = df_s3.coalesce(10)  # Adjust the number of partitions as needed
+
+# Save 33,900,000 rows to S3
+s3_output_path = "s3://group8project/credit_card_fraud/org80percent"
+df_s3_coalesced.write.mode('overwrite').parquet(s3_output_path)
+
+# Save 100,000 rows to RDS
+rds_url = "jdbc:mysql://database-1.c83nalmcke6t.us-east-1.rds.amazonaws.com:3306/creditdb"
+rds_properties = {
     "user": "admin",
-    "password": "pass1234",
+    "password": "8989717872",
     "driver": "com.mysql.cj.jdbc.Driver"
 }
 
-# Read data from MySQL
-df_ten = spark.read \
-    .format("jdbc") \
-    .option("url", jdbc_url) \
-    .option("dbtable", "credit_card") \
-    .option("user", mysql_properties["user"]) \
-    .option("password", mysql_properties["password"]) \
-    .option("driver", mysql_properties["driver"]) \
-    .load()
-
-df_ten_one = spark.read \
-    .format("jdbc") \
-    .option("url", jdbc_url) \
-    .option("dbtable", "credit_card_two") \
-    .option("user", mysql_properties["user"]) \
-    .option("password", mysql_properties["password"]) \
-    .option("driver", mysql_properties["driver"]) \
-    .load()
-
-# Read data from S3
-s3_input = "s3://projecttry/credit/credit_card_csv/"
-s3_df = spark.read.csv(s3_input, header=True, inferSchema=True)
-
-# Union DataFrames
-df_union = df_ten.union(df_ten_one).union(s3_df)
-
-# Drop rows with any null values
-df_dropped_na = df_union.dropna()
-
-# Remove duplicates
-df_uniq_all = df_dropped_na.dropDuplicates()
-
-# Write the resulting DataFrame to S3 in CSV format
-output_path = "s3://credit-card-twenty/credit_card_csv/credit_card.csv"
-df_uniq_all.write.mode("overwrite").csv(output_path)
+df_rds.write.jdbc(url=rds_url, table="creditdata", mode="overwrite", properties=rds_properties)
 
 # Stop the Spark session
 spark.stop()
