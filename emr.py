@@ -42,8 +42,8 @@ s3_path = "s3://group8project/credit_card_fraud/"
 df = spark.read.csv(s3_path, schema=schema, header=True)
 
 # Split DataFrame
-df_rds = df.limit(100000)  # First 100,000 rows for RDS
-df_s3 = df.subtract(df_rds)  # Remaining 33,900,000 rows for S3
+df_rds = df.limit(150000)  # First 100,000 rows for RDS
+df_s3 = df.subtract(df_rds)  # Remaining rows for S3
 
 # Coalesce df_s3 to reduce the number of partitions
 df_s3_coalesced = df_s3.coalesce(10)  # Adjust the number of partitions as needed
