@@ -37,7 +37,7 @@ Resources:
           - org.apache.spark.deploy.Mysparkob 
           - --jars
           - s3://requiredfiles2323/mysql-connector-java-8.0.23.jar 
-          - s3://requiredfiles2323/emrpy.py
+          - s3://group8project/emrpy.py
       JobFlowId: !Ref MyEMRCluster
 
   DataCrawler:
